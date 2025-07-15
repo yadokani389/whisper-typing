@@ -15,48 +15,51 @@
         config.allowUnfree = true;
         config.cudaSupport = true;
       };
+      python3 = pkgs.python3.withPackages (
+        ps: with ps; [
+          faster-whisper
+          sounddevice
+          soundfile
+          pyperclip
+          fastapi
+          uvicorn
+          torch
+          requests
+          python-multipart
+          numpy
+          setproctitle
+        ]
+      );
+      common = {
+        packages = [
+          python3
+        ];
+        PYTHONPATH = "${python3}/${python3.sitePackages}";
+      };
     in
     {
       devShells.${system} = {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
-            (python3.withPackages (
-              ps: with ps; [
-                faster-whisper
-                sounddevice
-                soundfile
-                pyperclip
-              ]
-            ))
-          ];
-          LD_LIBRARY_PATH =
-            with pkgs;
-            lib.makeLibraryPath [
-              xorg.libX11
-              xorg.libXrender
-              xorg.libXrandr
-              libGL
-              glib
-              zlib
-              stdenv.cc.cc.lib
-              "/run/opengl-driver"
-              e2fsprogs
-              gmpxx
-              p11-kit
-            ];
-        };
-        cpu = pkgs.mkShell {
-          packages = with pkgs; [
-            (python3.withPackages (
-              ps: with ps; [
-                faster-whisper
-                sounddevice
-                soundfile
-                pyperclip
-              ]
-            ))
-          ];
-        };
+        default = pkgs.mkShell (
+          common
+          // {
+            LD_LIBRARY_PATH =
+              with pkgs;
+              lib.makeLibraryPath [
+                xorg.libX11
+                xorg.libXrender
+                xorg.libXrandr
+                libGL
+                glib
+                zlib
+                stdenv.cc.cc.lib
+                "/run/opengl-driver"
+                e2fsprogs
+                gmpxx
+                p11-kit
+              ];
+          }
+        );
+        cpu = pkgs.mkShell common;
       };
     };
 }

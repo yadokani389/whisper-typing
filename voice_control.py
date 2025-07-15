@@ -8,7 +8,7 @@ import os
 import signal
 import sys
 
-PID_FILE = "/tmp/voice_typing.pid"
+PID_FILE = "/tmp/voice_typing_client.pid"
 
 
 def get_daemon_pid():
