@@ -29,37 +29,35 @@
           setproctitle
         ]
       );
-      common = {
+      mkApp = app: file: {
+        type = "app";
+        program = pkgs.lib.getExe (
+          pkgs.writeShellApplication {
+            name = "whisper-typing-${app}";
+            runtimeInputs = [
+              python3
+              pkgs.wtype
+            ];
+            text = ''
+              #!${pkgs.runtimeShell}
+              exec ${python3}/bin/python ${file} "$@"
+            '';
+          }
+        );
+      };
+    in
+    {
+      apps.${system} = {
+        server = mkApp "server" ./server.py;
+        client = mkApp "client" ./client.py;
+      };
+
+      devShells.${system}.default = pkgs.mkShell {
         packages = [
           python3
           pkgs.wtype
         ];
         PYTHONPATH = "${python3}/${python3.sitePackages}";
-      };
-    in
-    {
-      devShells.${system} = {
-        default = pkgs.mkShell (
-          common
-          // {
-            LD_LIBRARY_PATH =
-              with pkgs;
-              lib.makeLibraryPath [
-                xorg.libX11
-                xorg.libXrender
-                xorg.libXrandr
-                libGL
-                glib
-                zlib
-                stdenv.cc.cc.lib
-                "/run/opengl-driver"
-                e2fsprogs
-                gmpxx
-                p11-kit
-              ];
-          }
-        );
-        cpu = pkgs.mkShell common;
       };
     };
 }
