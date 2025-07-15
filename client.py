@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
 import os
 import signal
+import subprocess
 import threading
 import time
 
@@ -10,8 +10,9 @@ import sounddevice as sd
 import soundfile as sf
 from setproctitle import setproctitle
 
+
 class VoiceTypingClient:
-    def __init__(self, server_url="http://localhost:18031"):
+    def __init__(self, server_url="http://localhost:18031", output_mode="clipboard"):
         self.is_recording = False
         self.recording_thread = None
         self.server_url = server_url
@@ -19,6 +20,7 @@ class VoiceTypingClient:
         self.audio_file = "voice.wav"
         self.pid_file = "/tmp/voice_typing_client.pid"
         self.running = True
+        self.output_mode = output_mode  # "clipboard", "direct_type"
 
     def start_recording(self):
         print("🎙️  Recording started...")
@@ -72,9 +74,8 @@ class VoiceTypingClient:
 
                 if transcribed_text.strip():
                     print(f"💬 Transcribed: {transcribed_text}")
-                    # Copy to clipboard
-                    pyperclip.copy(transcribed_text)
-                    print("📋 Text copied to clipboard!")
+                    # Output text based on configured mode
+                    self.output_text(transcribed_text)
                 else:
                     print("🔇 No speech detected")
             else:
@@ -94,6 +95,17 @@ class VoiceTypingClient:
                 f.write(str(os.getpid()))
         except Exception as e:
             print(f"PID file error: {e}")
+
+    def output_text(self, text):
+        """Output text based on configured mode"""
+        if self.output_mode == "clipboard":
+            pyperclip.copy(text)
+            print("📋 Text copied to clipboard!")
+        elif self.output_mode == "direct_type":
+            print("⌨️  Direct typing...")
+            subprocess.run(["wtype", text])
+        else:
+            print(f"❌ Unknown output mode: {self.output_mode}")
 
     def toggle_recording(self):
         if not self.is_recording:
@@ -142,10 +154,31 @@ def main():
     import sys
 
     server_url = "http://localhost:18031"
+    output_mode = "direct_type"  # Default mode
+
+    # Parse command line arguments
+    if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help"]:
+        print("Usage: python client.py [server_url] [output_mode] [typing_delay]")
+        print("  server_url: Server URL (default: http://localhost:18031)")
+        print("  output_mode: Output mode (default: clipboard)")
+        print("    - clipboard: Copy to clipboard only")
+        print("    - direct_type: Type directly without using clipboard")
+        sys.exit(0)
+
     if len(sys.argv) > 1:
         server_url = sys.argv[1]
+    if len(sys.argv) > 2:
+        output_mode = sys.argv[2]
 
-    client = VoiceTypingClient(server_url)
+    # Validate output mode
+    valid_modes = ["clipboard", "direct_type"]
+    if output_mode not in valid_modes:
+        print(f"❌ Invalid output mode: {output_mode}")
+        print(f"Valid modes: {', '.join(valid_modes)}")
+        sys.exit(1)
+
+    client = VoiceTypingClient(server_url, output_mode)
+    print(f"📄 Output mode: {output_mode}")
 
     setproctitle("whisper-typing")
 
@@ -167,4 +200,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

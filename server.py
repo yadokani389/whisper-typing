@@ -1,6 +1,5 @@
 import io
 
-import torch
 import uvicorn
 from fastapi import FastAPI, Form, HTTPException, UploadFile
 from faster_whisper import WhisperModel
@@ -8,20 +7,8 @@ from faster_whisper import WhisperModel
 app = FastAPI()
 
 
-def initialize_model():
-    """Initialize Whisper model with automatic device detection"""
-    if torch.cuda.is_available():
-        return WhisperModel("large-v3-turbo", device="cuda", compute_type="float16")
-    else:
-        return WhisperModel(
-            "tiny",
-            device="cpu",
-            compute_type="int8",
-        )
-
-
 # Initialize model on startup
-model = initialize_model()
+model = WhisperModel("large-v3", device="cuda", compute_type="float16")
 
 
 @app.post("/transcribe")

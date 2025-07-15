@@ -23,7 +23,6 @@
           pyperclip
           fastapi
           uvicorn
-          torch
           requests
           python-multipart
           numpy
@@ -33,6 +32,7 @@
       common = {
         packages = [
           python3
+          pkgs.wtype
         ];
         PYTHONPATH = "${python3}/${python3.sitePackages}";
       };
