@@ -24,6 +24,7 @@
           fastapi
           uvicorn
           python-multipart
+          httpx
         ];
       client_ps =
         ps: with ps; [

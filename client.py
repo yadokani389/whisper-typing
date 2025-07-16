@@ -34,6 +34,9 @@ class VoiceTypingClient:
         server_url=DEFAULT_SERVER_URL,
         output_mode=DEFAULT_OUTPUT_MODE,
         enable_tray=False,
+        use_ollama=False,
+        ollama_model=None,
+        ollama_prompt=None,
     ):
         # Input validation
         if not server_url.startswith(("http://", "https://")):
@@ -56,8 +59,13 @@ class VoiceTypingClient:
         self.tray_icon = None
         self.tray_thread = None
 
+        # Ollama settings
+        self.use_ollama = use_ollama
+        self.ollama_model = ollama_model
+        self.ollama_prompt = ollama_prompt
+
     def start_recording(self):
-        print("🎙️  Recording started...")
+        print("Recording started...")
         self.audio_data = []
 
         def callback(indata, frames, time, status):
@@ -70,7 +78,7 @@ class VoiceTypingClient:
                 time.sleep(0.1)
 
     def stop_recording_and_transcribe(self):
-        print("⏹️  Recording stopped, processing...")
+        print("Recording stopped, processing...")
 
         if hasattr(self, "audio_data") and self.audio_data:
             import numpy as np
@@ -82,39 +90,52 @@ class VoiceTypingClient:
             # Send to server for transcription
             self.transcribe_with_server()
         else:
-            print("❌ No audio data recorded")
+            print("No audio data recorded")
 
     def transcribe_with_server(self):
         """Send audio file to server for transcription"""
         try:
-            print("📡 Sending audio to server...")
+            print("Sending audio to server...")
 
-            # Send audio file
+            # Prepare form data
             with open(self.audio_file, "rb") as audio_file:
                 files = {"file": audio_file}
+                data = {
+                    "use_ollama": self.use_ollama,
+                    "ollama_model": self.ollama_model or "",
+                    "ollama_prompt": self.ollama_prompt or "",
+                }
                 response = requests.post(
-                    f"{self.server_url}/transcribe", files=files, timeout=30
+                    f"{self.server_url}/transcribe", files=files, data=data, timeout=60
                 )
 
             if response.status_code == 200:
                 result = response.json()
                 transcribed_text = result.get("transcription", "")
+                formatted_text = result.get("formatted_text", "")
 
                 if transcribed_text.strip():
-                    print(f"💬 Transcribed: {transcribed_text}")
+                    print(f"Transcribed: {transcribed_text}")
+
+                    # Use formatted text if available, otherwise use original
+                    output_text = formatted_text if formatted_text else transcribed_text
+
+                    if formatted_text:
+                        print(f"Formatted: {formatted_text}")
+
                     # Output text based on configured mode
-                    self.output_text(transcribed_text)
+                    self.output_text(output_text)
                 else:
-                    print("🔇 No speech detected")
+                    print("No speech detected")
             else:
-                print(f"❌ Server error: {response.status_code} - {response.text}")
+                print(f"Server error: {response.status_code} - {response.text}")
 
         except requests.exceptions.ConnectionError:
-            print("❌ Cannot connect to server. Make sure the server is running.")
+            print("Cannot connect to server. Make sure the server is running.")
         except requests.exceptions.Timeout:
-            print("❌ Server request timed out")
+            print("Server request timed out")
         except Exception as e:
-            print(f"❌ Error during transcription: {e}")
+            print(f"Error during transcription: {e}")
         finally:
             # Update tray icon after processing
             if self.enable_tray and self.tray_icon:
@@ -124,12 +145,12 @@ class VoiceTypingClient:
         """Output text based on configured mode"""
         if self.output_mode == "clipboard":
             pyperclip.copy(text)
-            print("📋 Text copied to clipboard!")
+            print("Text copied to clipboard!")
         elif self.output_mode == "direct_type":
-            print("⌨️  Direct typing...")
+            print("Direct typing...")
             subprocess.run(["wtype", text])
         else:
-            print(f"❌ Unknown output mode: {self.output_mode}")
+            print(f"Unknown output mode: {self.output_mode}")
 
     def toggle_recording(self):
         if not self.is_recording:
@@ -208,7 +229,7 @@ class VoiceTypingClient:
     def show_status(self, icon, item):
         """Show current status (placeholder for now)"""
         status = "Recording" if self.is_recording else "Idle"
-        print(f"📊 Current status: {status}")
+        print(f"Current status: {status}")
 
     def quit_application(self, icon, item):
         """Quit the application from tray"""
@@ -217,11 +238,11 @@ class VoiceTypingClient:
 
     def run(self):
         """Main daemon loop"""
-        print(f"👂 Voice typing client started. Connected to: {self.server_url}")
+        print(f"Voice typing client started. Connected to: {self.server_url}")
 
         # Setup tray icon if enabled
         if self.enable_tray:
-            print("🔧 Setting up system tray icon...")
+            print("Setting up system tray icon...")
             self.setup_tray_icon()
 
         print("Waiting for signals...")
@@ -258,10 +279,10 @@ class VoiceTypingClient:
     def signal_handler(self, signum, frame):
         """Signal handler"""
         if signum == signal.SIGUSR1:
-            print("\n📨 Received toggle signal")
+            print("\nReceived toggle signal")
             self.toggle_recording()
         elif signum in [signal.SIGINT, signal.SIGTERM]:
-            print("\n🛑 Received shutdown signal")
+            print("\nReceived shutdown signal")
             self.running = False
             self.cleanup()
 
@@ -283,6 +304,13 @@ def create_argument_parser():
         help=f"Output mode (default: {DEFAULT_OUTPUT_MODE})",
     )
     parser.add_argument("--tray", action="store_true", help="Enable system tray icon")
+    parser.add_argument(
+        "--use-ollama", action="store_true", help="Enable Ollama text formatting"
+    )
+    parser.add_argument("--ollama-model", help="Ollama model to use (e.g., gemma3)")
+    parser.add_argument(
+        "--ollama-prompt", help="Prompt to send to Ollama for text formatting"
+    )
     return parser
 
 
@@ -291,9 +319,7 @@ def validate_dependencies(args):
     import sys
 
     if args.tray and not TRAY_AVAILABLE:
-        print(
-            "❌ Tray icon functionality not available. Install required dependencies:"
-        )
+        print("Tray icon functionality not available. Install required dependencies:")
         print("   pip install pystray pillow")
         sys.exit(1)
 
@@ -312,14 +338,25 @@ def main():
     validate_dependencies(args)
 
     try:
-        client = VoiceTypingClient(args.server_url, args.output_mode, args.tray)
+        client = VoiceTypingClient(
+            args.server_url,
+            args.output_mode,
+            args.tray,
+            args.use_ollama,
+            args.ollama_model,
+            args.ollama_prompt,
+        )
     except ValueError as e:
-        print(f"❌ Configuration error: {e}")
+        print(f"Configuration error: {e}")
         return 1
 
-    print(f"📄 Output mode: {args.output_mode}")
+    print(f"Output mode: {args.output_mode}")
     if args.tray:
-        print("🔧 Tray icon enabled")
+        print("Tray icon enabled")
+    if args.use_ollama:
+        print(
+            f"Ollama enabled - Model: {args.ollama_model}, Prompt: {args.ollama_prompt}"
+        )
 
     setproctitle("whisper-typing")
     setup_signal_handlers(client)
@@ -327,7 +364,7 @@ def main():
     try:
         client.run()
     except Exception as e:
-        print(f"❌ Client error: {e}")
+        print(f"Client error: {e}")
         return 1
     finally:
         # Cleanup handled by signal handlers
