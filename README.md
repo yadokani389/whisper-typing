@@ -162,6 +162,59 @@ nix run github:yadokani389/whisper-typing#client -- --use-ollama --ollama-model 
 2. If Ollama is enabled, transcribed text is sent to Ollama for formatting
 3. Formatted text (or original if Ollama is disabled) is output to clipboard or typed directly
 
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as Client
+    participant S as Server
+    participant W as Whisper
+    participant O as Ollama
+
+    Note over U,O: System Startup
+    U->>C: Start client daemon
+    C->>C: Initialize signal handlers
+
+    Note over U,O: Recording Workflow
+    U->>C: Send SIGUSR1 signal
+    C->>C: Toggle recording state
+    alt Recording Start
+        C->>C: Start audio capture
+        C->>C: Record audio (16kHz)
+        U->>C: Send SIGUSR1 signal (stop)
+        C->>C: Stop recording
+    end
+
+    Note over U,O: Transcription Process
+    C->>S: POST /transcribe (audio file)
+    S->>W: Process audio with Whisper
+    W->>W: GPU-accelerated transcription
+    W-->>S: Return transcribed text
+
+    alt Ollama Enabled
+        S->>O: Send text + formatting prompt
+        O->>O: Process with selected model
+        O-->>S: Return formatted text
+        S-->>C: {transcription, formatted_text}
+    else Ollama Disabled
+        S-->>C: {transcription}
+    end
+
+    Note over U,O: Output Generation
+    alt Output Mode: clipboard
+        C->>C: Copy to clipboard
+    else Output Mode: direct_type
+        C->>C: Type using wtype command
+    end
+
+    C->>C: Ready for next input
+
+    Note over U,O: Error Handling
+    alt Server Connection Error
+        S-->>C: Connection error
+        C->>C: Display error message
+    end
+```
+
 ## Configuration
 
 ### Server Configuration
