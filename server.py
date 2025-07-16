@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import io
 
 import uvicorn
@@ -38,12 +39,6 @@ async def transcribe_audio(file: UploadFile = Form(...)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "model_loaded": model is not None}
 
 
 if __name__ == "__main__":

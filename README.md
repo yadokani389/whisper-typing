@@ -9,7 +9,8 @@ A voice-to-text system using OpenAI's Whisper model for real-time speech recogni
 - Multiple output modes: clipboard or direct typing
 - Signal-based control for seamless integration
 - Japanese language support (configurable)
-- Health monitoring and error handling
+- Optional system tray icon with visual status indicators
+- Error handling
 
 ## Components
 
@@ -19,7 +20,6 @@ A voice-to-text system using OpenAI's Whisper model for real-time speech recogni
 - Uses `faster-whisper` with CUDA acceleration
 - Accepts audio files and returns transcribed text
 - Optimized for Japanese language recognition
-- Health check endpoint for monitoring
 
 ### Client (`client.py`)
 
@@ -27,13 +27,11 @@ A voice-to-text system using OpenAI's Whisper model for real-time speech recogni
 - Two output modes:
   - `clipboard`: Copy transcribed text to clipboard
   - `direct_type`: Type directly using `wtype` command
-- Process management with PID file
 - Configurable server URL and output mode
-
-### Control Script (`voice_control.py`)
-
-- Command-line interface for controlling the voice typing daemon
-- Supports toggle, status, and quit commands
+- Optional system tray icon with status-based visual indicators:
+  - 🟢 Green: Idle/ready
+  - 🔴 Red: Recording
+  - ⚫ Gray: Stopped/error
 
 ## Usage
 
@@ -51,43 +49,50 @@ The server will start on `http://localhost:18031` with GPU acceleration enabled.
 
 ```bash
 # Default mode (direct typing)
-nix run github:yadokani389/whisper-typing#server
+nix run github:yadokani389/whisper-typing#client
 
-# With custom server URL and output mode
-nix run github:yadokani389/whisper-typing#server -- http://localhost:18031 clipboard
+# With custom configuration using flags
+nix run github:yadokani389/whisper-typing#client -- --server-url http://localhost:18031 --output-mode clipboard
 
-# Available output modes:
-# - clipboard: Copy to clipboard only
-# - direct_type: Type directly without using clipboard
+# Enable system tray icon
+nix run github:yadokani389/whisper-typing#client -- --tray
+
+# Show available options
+nix run github:yadokani389/whisper-typing#client -- --help
 ```
+
+#### Command Line Options
+
+- `--server-url`: Server URL (default: `http://localhost:18031`)
+- `--output-mode`: Output mode (default: `direct_type`)
+  - `clipboard`: Copy to clipboard only
+  - `direct_type`: Type directly without using clipboard
+- `--tray`: Enable system tray icon with visual status indicators
 
 ### 3. Control Voice Recording
 
-#### Using Signals (Recommended)
+#### Signal-based Control
 
 ```bash
 # Toggle recording on/off
 pkill -SIGUSR1 whisper-typing
 
-# Check status
-pkill -SIGUSR2 whisper-typing
-
 # Quit daemon
 pkill -SIGTERM whisper-typing
 ```
 
-#### Using Control Script
+#### Tray Icon Control (when `--tray` is enabled)
 
-```bash
-# Toggle recording
-python voice_control.py toggle
+- Right-click the tray icon to access the menu
+- **Toggle Recording**: Start/stop voice recording
+- **Status**: Show current application status
+- **Quit**: Exit the application
 
-# Check status
-python voice_control.py status
+#### Status Indicators
 
-# Quit daemon
-python voice_control.py quit
-```
+- 🟢 **Green**: Ready/idle - waiting for voice input
+- 🔴 **Red**: Recording - actively capturing audio
+- ⚫ **Gray**: Stopped/error - application stopped or server unreachable
 
 ## Configuration
 
@@ -103,7 +108,6 @@ python voice_control.py quit
 - **Server URL**: `http://localhost:18031` (default)
 - **Output Mode**: `direct_type` (default)
 - **Sample Rate**: 16000 Hz
-- **PID File**: `/tmp/voice_typing_client.pid`
 
 ## API Endpoints
 

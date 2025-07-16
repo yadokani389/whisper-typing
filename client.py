@@ -1,4 +1,4 @@
-import os
+#!/usr/bin/env python3
 import signal
 import subprocess
 import threading
@@ -10,17 +10,51 @@ import sounddevice as sd
 import soundfile as sf
 from setproctitle import setproctitle
 
+# Optional tray icon imports
+try:
+    import pystray
+    from PIL import Image, ImageDraw
+
+    TRAY_AVAILABLE = True
+except ImportError:
+    TRAY_AVAILABLE = False
+
+# Constants
+SAMPLE_RATE = 16000
+AUDIO_FILE = "voice.wav"
+DEFAULT_SERVER_URL = "http://localhost:18031"
+DEFAULT_OUTPUT_MODE = "direct_type"
+ICON_SIZE = 64
+ICON_CIRCLE_MARGIN = 8
+
 
 class VoiceTypingClient:
-    def __init__(self, server_url="http://localhost:18031", output_mode="clipboard"):
+    def __init__(
+        self,
+        server_url=DEFAULT_SERVER_URL,
+        output_mode=DEFAULT_OUTPUT_MODE,
+        enable_tray=False,
+    ):
+        # Input validation
+        if not server_url.startswith(("http://", "https://")):
+            raise ValueError(f"Invalid server URL format: {server_url}")
+
+        valid_modes = ["clipboard", "direct_type"]
+        if output_mode not in valid_modes:
+            raise ValueError(
+                f"Invalid output mode: {output_mode}. Valid modes: {valid_modes}"
+            )
+
         self.is_recording = False
         self.recording_thread = None
         self.server_url = server_url
-        self.sample_rate = 16000
-        self.audio_file = "voice.wav"
-        self.pid_file = "/tmp/voice_typing_client.pid"
+        self.sample_rate = SAMPLE_RATE
+        self.audio_file = AUDIO_FILE
         self.running = True
-        self.output_mode = output_mode  # "clipboard", "direct_type"
+        self.output_mode = output_mode
+        self.enable_tray = enable_tray and TRAY_AVAILABLE
+        self.tray_icon = None
+        self.tray_thread = None
 
     def start_recording(self):
         print("🎙️  Recording started...")
@@ -55,12 +89,6 @@ class VoiceTypingClient:
         try:
             print("📡 Sending audio to server...")
 
-            # Check server health
-            health_response = requests.get(f"{self.server_url}/health", timeout=5)
-            if health_response.status_code != 200:
-                print("❌ Server is not healthy")
-                return
-
             # Send audio file
             with open(self.audio_file, "rb") as audio_file:
                 files = {"file": audio_file}
@@ -87,14 +115,10 @@ class VoiceTypingClient:
             print("❌ Server request timed out")
         except Exception as e:
             print(f"❌ Error during transcription: {e}")
-
-    def write_pid(self):
-        """Write PID file"""
-        try:
-            with open(self.pid_file, "w") as f:
-                f.write(str(os.getpid()))
-        except Exception as e:
-            print(f"PID file error: {e}")
+        finally:
+            # Update tray icon after processing
+            if self.enable_tray and self.tray_icon:
+                self.update_tray_icon()
 
     def output_text(self, text):
         """Output text based on configured mode"""
@@ -121,81 +145,195 @@ class VoiceTypingClient:
                 self.recording_thread.join()
             self.stop_recording_and_transcribe()
 
+        # Update tray icon
+        if self.enable_tray and self.tray_icon:
+            self.update_tray_icon()
+
+    def create_icon(self, color):
+        """Create a simple circular icon with the given color and transparent background"""
+        image = Image.new(
+            "RGBA", (ICON_SIZE, ICON_SIZE), (255, 255, 255, 0)
+        )  # Transparent background
+        draw = ImageDraw.Draw(image)
+        draw.ellipse(
+            [
+                ICON_CIRCLE_MARGIN,
+                ICON_CIRCLE_MARGIN,
+                ICON_SIZE - ICON_CIRCLE_MARGIN,
+                ICON_SIZE - ICON_CIRCLE_MARGIN,
+            ],
+            fill=color,
+        )
+        return image
+
+    def get_tray_icon(self):
+        """Get the appropriate icon based on current status"""
+        if self.is_recording:
+            return self.create_icon("red")  # Recording
+        elif not self.running:
+            return self.create_icon("gray")  # Stopped
+        else:
+            return self.create_icon("green")  # Idle
+
+    def update_tray_icon(self):
+        """Update the tray icon based on current status"""
+        if self.tray_icon:
+            self.tray_icon.icon = self.get_tray_icon()
+
+    def setup_tray_icon(self):
+        """Setup the system tray icon"""
+        if not self.enable_tray:
+            return
+
+        # Create menu items
+        menu = pystray.Menu(
+            pystray.MenuItem("Toggle Recording", self.tray_toggle_recording),
+            pystray.MenuItem("Status", self.show_status),
+            pystray.MenuItem("Quit", self.quit_application),
+        )
+
+        # Create tray icon
+        self.tray_icon = pystray.Icon(
+            "whisper-typing", self.get_tray_icon(), menu=menu, title="Whisper Typing"
+        )
+
+        # Run tray icon in separate thread
+        self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+        self.tray_thread.start()
+
+    def tray_toggle_recording(self, icon, item):
+        """Handle toggle recording from tray menu"""
+        self.toggle_recording()
+
+    def show_status(self, icon, item):
+        """Show current status (placeholder for now)"""
+        status = "Recording" if self.is_recording else "Idle"
+        print(f"📊 Current status: {status}")
+
+    def quit_application(self, icon, item):
+        """Quit the application from tray"""
+        self.running = False
+        self.cleanup()
+
     def run(self):
         """Main daemon loop"""
         print(f"👂 Voice typing client started. Connected to: {self.server_url}")
+
+        # Setup tray icon if enabled
+        if self.enable_tray:
+            print("🔧 Setting up system tray icon...")
+            self.setup_tray_icon()
+
         print("Waiting for signals...")
-        self.write_pid()
 
         try:
             while self.running:
                 time.sleep(1)
         except KeyboardInterrupt:
             pass
+        finally:
+            self.cleanup()
+
+    def cleanup(self):
+        """Centralized cleanup method"""
+        import os
+
+        # Stop recording if active
+        if self.is_recording:
+            self.is_recording = False
+            if self.recording_thread and self.recording_thread.is_alive():
+                self.recording_thread.join(timeout=5)
+
+        # Clean up tray icon
+        if self.enable_tray and self.tray_icon:
+            self.tray_icon.stop()
+
+        # Clean up audio file
+        if os.path.exists(self.audio_file):
+            try:
+                os.remove(self.audio_file)
+            except OSError:
+                pass  # File might be in use
 
     def signal_handler(self, signum, frame):
         """Signal handler"""
         if signum == signal.SIGUSR1:
             print("\n📨 Received toggle signal")
             self.toggle_recording()
-        elif signum == signal.SIGUSR2:
-            status = "recording" if self.is_recording else "idle"
-            print(f"\n📊 Status: {status}")
         elif signum in [signal.SIGINT, signal.SIGTERM]:
             print("\n🛑 Received shutdown signal")
             self.running = False
-            if self.is_recording:
-                self.is_recording = False
-                if self.recording_thread:
-                    self.recording_thread.join()
+            self.cleanup()
 
 
-def main():
+def create_argument_parser():
+    """Create and configure the argument parser"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Voice typing client")
+    parser.add_argument(
+        "--server-url",
+        default=DEFAULT_SERVER_URL,
+        help=f"Server URL (default: {DEFAULT_SERVER_URL})",
+    )
+    parser.add_argument(
+        "--output-mode",
+        default=DEFAULT_OUTPUT_MODE,
+        choices=["clipboard", "direct_type"],
+        help=f"Output mode (default: {DEFAULT_OUTPUT_MODE})",
+    )
+    parser.add_argument("--tray", action="store_true", help="Enable system tray icon")
+    return parser
+
+
+def validate_dependencies(args):
+    """Validate that required dependencies are available"""
     import sys
 
-    server_url = "http://localhost:18031"
-    output_mode = "direct_type"  # Default mode
-
-    # Parse command line arguments
-    if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help"]:
-        print("Usage: python client.py [server_url] [output_mode] [typing_delay]")
-        print("  server_url: Server URL (default: http://localhost:18031)")
-        print("  output_mode: Output mode (default: clipboard)")
-        print("    - clipboard: Copy to clipboard only")
-        print("    - direct_type: Type directly without using clipboard")
-        sys.exit(0)
-
-    if len(sys.argv) > 1:
-        server_url = sys.argv[1]
-    if len(sys.argv) > 2:
-        output_mode = sys.argv[2]
-
-    # Validate output mode
-    valid_modes = ["clipboard", "direct_type"]
-    if output_mode not in valid_modes:
-        print(f"❌ Invalid output mode: {output_mode}")
-        print(f"Valid modes: {', '.join(valid_modes)}")
+    if args.tray and not TRAY_AVAILABLE:
+        print(
+            "❌ Tray icon functionality not available. Install required dependencies:"
+        )
+        print("   pip install pystray pillow")
         sys.exit(1)
 
-    client = VoiceTypingClient(server_url, output_mode)
-    print(f"📄 Output mode: {output_mode}")
 
-    setproctitle("whisper-typing")
-
-    # Set up signal handlers
+def setup_signal_handlers(client):
+    """Setup signal handlers for the client"""
     signal.signal(signal.SIGINT, client.signal_handler)
     signal.signal(signal.SIGTERM, client.signal_handler)
     signal.signal(signal.SIGUSR1, client.signal_handler)
-    signal.signal(signal.SIGUSR2, client.signal_handler)
+
+
+def main():
+    parser = create_argument_parser()
+    args = parser.parse_args()
+
+    validate_dependencies(args)
+
+    try:
+        client = VoiceTypingClient(args.server_url, args.output_mode, args.tray)
+    except ValueError as e:
+        print(f"❌ Configuration error: {e}")
+        return 1
+
+    print(f"📄 Output mode: {args.output_mode}")
+    if args.tray:
+        print("🔧 Tray icon enabled")
+
+    setproctitle("whisper-typing")
+    setup_signal_handlers(client)
 
     try:
         client.run()
     except Exception as e:
         print(f"❌ Client error: {e}")
+        return 1
     finally:
-        # Cleanup
-        if os.path.exists(client.pid_file):
-            os.remove(client.pid_file)
+        # Cleanup handled by signal handlers
+        pass
+
+    return 0
 
 
 if __name__ == "__main__":
