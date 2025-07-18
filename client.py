@@ -145,12 +145,15 @@ class VoiceTypingClient:
 
     def output_text(self, text):
         """Output text based on configured mode"""
+        # Remove newlines from the text
+        cleaned_text = text.replace("\n", " ").replace("\r", " ").strip()
+
         if self.output_mode == "clipboard":
-            pyperclip.copy(text)
+            pyperclip.copy(cleaned_text)
             print("Text copied to clipboard!")
         elif self.output_mode == "direct_type":
             print("Direct typing...")
-            subprocess.run(["wtype", text])
+            subprocess.run(["wtype", cleaned_text])
         else:
             print(f"Unknown output mode: {self.output_mode}")
 
