@@ -21,7 +21,6 @@ except ImportError:
 
 # Constants
 SAMPLE_RATE = 16000
-AUDIO_FILE = "voice.wav"
 DEFAULT_SERVER_URL = "http://localhost:18031"
 DEFAULT_OUTPUT_MODE = "direct_type"
 ICON_SIZE = 64
@@ -52,7 +51,6 @@ class VoiceTypingClient:
         self.recording_thread = None
         self.server_url = server_url
         self.sample_rate = SAMPLE_RATE
-        self.audio_file = AUDIO_FILE
         self.running = True
         self.output_mode = output_mode
         self.enable_tray = enable_tray and TRAY_AVAILABLE
@@ -82,32 +80,36 @@ class VoiceTypingClient:
 
         if hasattr(self, "audio_data") and self.audio_data:
             import numpy as np
+            import io
 
-            # Save audio data
+            # Prepare audio data in memory
             audio_array = np.concatenate(self.audio_data, axis=0)
-            sf.write(self.audio_file, audio_array, self.sample_rate)
+
+            # Create in-memory buffer
+            audio_buffer = io.BytesIO()
+            sf.write(audio_buffer, audio_array, self.sample_rate, format="WAV")
+            audio_buffer.seek(0)
 
             # Send to server for transcription
-            self.transcribe_with_server()
+            self.transcribe_with_server(audio_buffer)
         else:
             print("No audio data recorded")
 
-    def transcribe_with_server(self):
-        """Send audio file to server for transcription"""
+    def transcribe_with_server(self, audio_buffer):
+        """Send audio buffer to server for transcription"""
         try:
             print("Sending audio to server...")
 
             # Prepare form data
-            with open(self.audio_file, "rb") as audio_file:
-                files = {"file": audio_file}
-                data = {
-                    "use_ollama": self.use_ollama,
-                    "ollama_model": self.ollama_model or "",
-                    "ollama_prompt": self.ollama_prompt or "",
-                }
-                response = requests.post(
-                    f"{self.server_url}/transcribe", files=files, data=data, timeout=60
-                )
+            files = {"file": ("audio.wav", audio_buffer, "audio/wav")}
+            data = {
+                "use_ollama": self.use_ollama,
+                "ollama_model": self.ollama_model or "",
+                "ollama_prompt": self.ollama_prompt or "",
+            }
+            response = requests.post(
+                f"{self.server_url}/transcribe", files=files, data=data, timeout=60
+            )
 
             if response.status_code == 200:
                 result = response.json()
@@ -257,8 +259,6 @@ class VoiceTypingClient:
 
     def cleanup(self):
         """Centralized cleanup method"""
-        import os
-
         # Stop recording if active
         if self.is_recording:
             self.is_recording = False
@@ -268,13 +268,6 @@ class VoiceTypingClient:
         # Clean up tray icon
         if self.enable_tray and self.tray_icon:
             self.tray_icon.stop()
-
-        # Clean up audio file
-        if os.path.exists(self.audio_file):
-            try:
-                os.remove(self.audio_file)
-            except OSError:
-                pass  # File might be in use
 
     def signal_handler(self, signum, frame):
         """Signal handler"""

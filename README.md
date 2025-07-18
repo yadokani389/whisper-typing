@@ -185,7 +185,7 @@ sequenceDiagram
     end
 
     Note over U,O: Transcription Process
-    C->>S: POST /transcribe (audio file)
+    C->>S: POST /transcribe (audio data)
     S->>W: Process audio with Whisper
     W->>W: GPU-accelerated transcription
     W-->>S: Return transcribed text
