@@ -7,7 +7,7 @@ A voice-to-text system using OpenAI's Whisper model for real-time speech recogni
 - Real-time voice recording with toggle functionality
 - GPU-accelerated speech recognition using Whisper large-v3 model
 - Multiple output modes: clipboard or direct typing
-- **Ollama integration for text formatting and enhancement**
+- Ollama integration for text formatting and enhancement
 - Signal-based control for seamless integration
 - Japanese language support (configurable)
 - Optional system tray icon with visual status indicators
@@ -40,6 +40,7 @@ A voice-to-text system using OpenAI's Whisper model for real-time speech recogni
 ## Usage
 
 This project uses Nix flakes for reproducible builds and dependency management.
+Alternatively, `pyproject.toml` and `uv.lock` are now available, allowing you to manage dependencies and run the project using `uv`.
 
 ### 1. Start the Server
 
@@ -94,6 +95,16 @@ nix run github:yadokani389/whisper-typing#client -- --help
 - `--use-ollama`: Enable Ollama text formatting
 - `--ollama-model`: Ollama model to use (e.g., `gemma3`, `llama3`)
 - `--ollama-prompt`: Custom prompt for text formatting
+
+### Using `uv`
+
+Make sure `uv` and `wtype` is installed if you use `direct type`.
+
+```bash
+uv sync
+uv run server.py
+uv run client.py
+```
 
 ### 3. Control Voice Recording
 
