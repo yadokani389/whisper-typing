@@ -111,7 +111,6 @@ pkill -SIGTERM whisper-typing
 
 - Right-click the tray icon to access the menu
 - **Toggle Recording**: Start/stop voice recording
-- **Status**: Show current application status
 - **Quit**: Exit the application
 
 #### Status Indicators

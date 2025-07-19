@@ -67,8 +67,6 @@ class VoiceTypingClient:
         self.audio_data = []
 
         def callback(indata, frames, time, status):
-            if status:
-                print(f"Recording status: {status}")
             self.audio_data.append(indata.copy())
 
         with sd.InputStream(samplerate=self.sample_rate, channels=1, callback=callback):
@@ -214,7 +212,6 @@ class VoiceTypingClient:
         # Create menu items
         menu = pystray.Menu(
             pystray.MenuItem("Toggle Recording", self.tray_toggle_recording),
-            pystray.MenuItem("Status", self.show_status),
             pystray.MenuItem("Quit", self.quit_application),
         )
 
@@ -230,11 +227,6 @@ class VoiceTypingClient:
     def tray_toggle_recording(self, icon, item):
         """Handle toggle recording from tray menu"""
         self.toggle_recording()
-
-    def show_status(self, icon, item):
-        """Show current status (placeholder for now)"""
-        status = "Recording" if self.is_recording else "Idle"
-        print(f"Current status: {status}")
 
     def quit_application(self, icon, item):
         """Quit the application from tray"""
