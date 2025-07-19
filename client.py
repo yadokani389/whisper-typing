@@ -3,6 +3,8 @@ import signal
 import subprocess
 import threading
 import time
+import tomllib
+from pathlib import Path
 
 import pyperclip
 import requests
@@ -275,21 +277,43 @@ class VoiceTypingClient:
             self.cleanup()
 
 
+def load_config(custom_path=None):
+    """Load configuration from TOML file."""
+    if custom_path:
+        config_path = Path(custom_path)
+    else:
+        # Default path for Linux
+        config_path = Path.home() / ".config" / "whisper-typing" / "config.toml"
+
+    if not config_path.is_file():
+        if custom_path:
+            # Exit if a specified config file is not found
+            print(f"Error: Configuration file not found at {custom_path}")
+            exit(1)
+        return {}  # It's okay if the default config doesn't exist
+
+    try:
+        with config_path.open("rb") as f:
+            return tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        print(f"Error decoding config file: {e}")
+        return {}
+    except IOError as e:
+        print(f"Error reading config file {config_path}: {e}")
+        return {}
+
+
 def create_argument_parser():
     """Create and configure the argument parser"""
     import argparse
 
     parser = argparse.ArgumentParser(description="Voice typing client")
-    parser.add_argument(
-        "--server-url",
-        default=DEFAULT_SERVER_URL,
-        help=f"Server URL (default: {DEFAULT_SERVER_URL})",
-    )
+    parser.add_argument("--config", help="Path to a custom TOML configuration file.")
+    parser.add_argument("--server-url", help="Server URL")
     parser.add_argument(
         "--output-mode",
-        default=DEFAULT_OUTPUT_MODE,
         choices=["clipboard", "direct_type"],
-        help=f"Output mode (default: {DEFAULT_OUTPUT_MODE})",
+        help="Output mode",
     )
     parser.add_argument("--tray", action="store_true", help="Enable system tray icon")
     parser.add_argument(
@@ -306,9 +330,8 @@ def validate_dependencies(args):
     """Validate that required dependencies are available"""
     import sys
 
-    if args.tray and not TRAY_AVAILABLE:
+    if args.get("tray") and not TRAY_AVAILABLE:
         print("Tray icon functionality not available. Install required dependencies:")
-        print("   pip install pystray pillow")
         sys.exit(1)
 
 
@@ -320,30 +343,45 @@ def setup_signal_handlers(client):
 
 
 def main():
+    # Parse command-line arguments first to get custom config path
     parser = create_argument_parser()
     args = parser.parse_args()
 
-    validate_dependencies(args)
+    # Load config from file
+    config = load_config(args.config)
+
+    # Merge configurations (command-line overrides file)
+    settings = {
+        "server_url": args.server_url or config.get("server_url", DEFAULT_SERVER_URL),
+        "output_mode": args.output_mode
+        or config.get("output_mode", DEFAULT_OUTPUT_MODE),
+        "tray": args.tray or config.get("tray", False),
+        "use_ollama": args.use_ollama or config.get("use_ollama", False),
+        "ollama_model": args.ollama_model or config.get("ollama_model"),
+        "ollama_prompt": args.ollama_prompt or config.get("ollama_prompt"),
+    }
+
+    validate_dependencies(settings)
 
     try:
         client = VoiceTypingClient(
-            args.server_url,
-            args.output_mode,
-            args.tray,
-            args.use_ollama,
-            args.ollama_model,
-            args.ollama_prompt,
+            server_url=settings["server_url"],
+            output_mode=settings["output_mode"],
+            enable_tray=settings["tray"],
+            use_ollama=settings["use_ollama"],
+            ollama_model=settings["ollama_model"],
+            ollama_prompt=settings["ollama_prompt"],
         )
     except ValueError as e:
         print(f"Configuration error: {e}")
         return 1
 
-    print(f"Output mode: {args.output_mode}")
-    if args.tray:
+    print(f"Output mode: {settings['output_mode']}")
+    if settings["tray"]:
         print("Tray icon enabled")
-    if args.use_ollama:
+    if settings["use_ollama"]:
         print(
-            f"Ollama enabled - Model: {args.ollama_model}, Prompt: {args.ollama_prompt}"
+            f"Ollama enabled - Model: {settings['ollama_model']}, Prompt: {settings['ollama_prompt']}"
         )
 
     setproctitle("whisper-typing")

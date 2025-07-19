@@ -216,6 +216,21 @@ sequenceDiagram
 
 ## Configuration
 
+### Configuration File (Optional)
+
+The client can be configured using a TOML file located at `~/.config/whisper-typing/config.toml`. Command-line arguments will override settings from the configuration file.
+
+**Example `config.toml`:**
+
+```toml
+server_url = "http://localhost:18031"
+output_mode = "clipboard"
+tray = true
+use_ollama = true
+ollama_model = "gemma3"
+ollama_prompt = "以下のテキストを丁寧語に直してください"
+```
+
 ### Server Configuration
 
 - **Model**: Whisper large-v3
